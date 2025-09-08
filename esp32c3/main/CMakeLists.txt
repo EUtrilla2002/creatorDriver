@@ -1,0 +1,9 @@
+idf_component_register(
+   SRCS
+      "syscall/test_panic.c"
+      "syscall/return_from_panic.S"
+      "program.s"
+      "creator-esp.c"
+      "creator.s"
+   INCLUDE_DIRS
+      "..")
