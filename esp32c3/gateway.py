@@ -179,14 +179,60 @@ def do_flash_request(request):
     ret = text_file.write(asm_code)
     text_file.close()
 
+    # Kill debug processes
+    if 'openocd' in process_holder:
+      logging.debug('Killing OpenOCD')
+      kill_all_processes("openocd")
+      process_holder.pop('openocd', None)
+
+    if 'gdbgui' in process_holder:
+      logging.debug('Killing GDBGUI')
+      kill_all_processes("gdbgui")
+      process_holder.pop('gdbgui', None)
+
     # transform th temporal assembly file
     error = creator_build('tmp_assembly.s', "main/program.s");
     if error != 0:
       req_data['status'] += 'Error adapting assembly file...\n'
 
     # flashing steps...
+    if error == 0 :
+      error = check_uart_connection()
+    if error != 0:
+      req_data['status'] += 'No UART port found.\n'
+      logging.error("No UART port found.")
+      raise  Exception("No UART port found")
     if error == 0:
       error = do_cmd(req_data, ['idf.py',  'fullclean'])
+    # Disable memory protection
+    sdkconfig_path = os.path.join(BUILD_PATH, "sdkconfig")
+    # 1. Check out previous sdkconfig
+    # (*) This configuration is EXCUSIVELY FOR ESP-IDF WITHOUT ARDUINO
+    defaults_path = os.path.join(BUILD_PATH, "sdkconfig.defaults")
+    if target_board == 'esp32c3':
+      with open(defaults_path, "w") as f:
+          f.write(
+              "# CONFIG_ESP_SYSTEM_MEMPROT_FEATURE is not set\n"
+              "# CONFIG_ESP_SYSTEM_MEMPROT_FEATURE_LOCK is not set\n" 
+          )
+    #TODO: Add other boards here...
+
+    # 2. If previous sdkconfig exists, check if mem protection is disabled (for debug purposes)
+    if os.path.exists(sdkconfig_path):
+      if target_board == 'esp32c3':
+        # Memory Protection
+        do_cmd(req_data, [
+            'sed', '-i',
+            r'/^CONFIG_ESP_SYSTEM_MEMPROT_FEATURE=/c\# CONFIG_ESP_SYSTEM_MEMPROT_FEATURE is not set',
+            sdkconfig_path
+        ])
+        # Memory protection lock
+        do_cmd(req_data, [
+            'sed', '-i',
+            r'/^CONFIG_ESP_SYSTEM_MEMPROT_FEATURE_LOCK=/c\# CONFIG_ESP_SYSTEM_MEMPROT_FEATURE_LOCK is not set',
+            sdkconfig_path
+        ])
+    #TODO: Add other boards here...           
     if error == 0:
       error = do_cmd(req_data, ['idf.py',  'set-target', target_board])
     if error == 0:
@@ -312,7 +358,7 @@ def check_gdb_connection():
     try:
         lsof = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         output, errs = lsof.communicate(timeout=5) 
-        logging.info("GDB connection output: %s", output.decode())
+        logging.debug("GDB connection output: %s", output.decode())
         return output.decode()
     except subprocess.TimeoutExpired:
         lsof.kill()
@@ -413,13 +459,13 @@ def start_openocd_thread(req_data):
 # (6.4) GDB + GDBGUI function    
 def start_gdbgui(req_data):
     route = os.path.join(BUILD_PATH, 'gdbinit')
-    logging.info(f"GDB route: {route}")
+    logging.debug(f"GDB route: {route}")
     route = os.path.join(BUILD_PATH, 'gdbinit')
     if os.path.exists(route) and os.path.exists("./gbdscript.gdb"):
-        logging.info(f"GDB route: {route} existe.")
+        logging.debug(f"GDB route: {route} exists.")
     else:
-        logging.error(f"GDB route: {route} NO existe.")
-        req_data['status'] += f"GDB route: {route} NO existe.\n"
+        logging.error(f"GDB route: {route} does not exist.")
+        req_data['status'] += f"GDB route: {route} does not exist.\n"
         return jsonify(req_data)
     req_data['status'] = ''
     # Starting up GDB session
@@ -439,7 +485,7 @@ def start_gdbgui(req_data):
         #     output = check_gdb_connection() 
         timeout = 10  
         start = time()
-        while "riscv32-e" not in output and time() - start < timeout:
+        while ("riscv32-e" not in output or "CLOSE_WAIT" in output) and time() - start < timeout:
             sleep(1)
             output = check_gdb_connection()
         if "riscv32-e" not in output:
