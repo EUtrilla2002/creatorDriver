@@ -29,12 +29,13 @@ from flask import Flask, request, jsonify, send_file, Response
 from flask_cors import CORS, cross_origin
 import subprocess, os, signal
 import logging
-
+import webbrowser
 # Configure logging
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 BUILD_PATH = '.' 
 process_holder = {}
+GDBGUI_URL = "http://127.0.0.1:5000/"
 
 #### (*) Cleaning functions
 def do_fullclean_request(request):
@@ -351,6 +352,53 @@ def check_jtag_connection():
         return None
     return False    
 # --- (6.2) Debug processes monitoring functions ---
+def is_monitor_running():
+    """Check if idf.py monitor process is running"""
+    try:
+        result = subprocess.run(
+            ['pgrep', '-fl', 'idf.py.*monitor'],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False
+        )
+        output = result.stdout.strip()
+        if output:
+            logging.debug("Monitor process found:\n%s", output)
+            return True
+        else:
+            logging.debug("Monitor not running yet.")
+            return False
+    except Exception as e:
+        logging.error(f"Error executing pgrep: {e}")
+        return False
+
+def auto_reload_gdbgui():
+    """Reload gdbgui page only if monitor is running but gdbgui is not responding"""
+    # webbrowser.open(GDBGUI_URL)  # open at start
+    monitor_started = False
+
+    while True:
+        sleep(3)
+
+        # Esperamos hasta que el monitor esté activo
+        if not monitor_started:
+            if is_monitor_running():
+                monitor_started = True
+                logging.debug("Monitor detected, starting gdbgui auto-reload checks.")
+            else:
+                continue  # no hacemos nada hasta que monitor esté corriendo
+
+        # Ahora el monitor está activo, chequeamos gdbgui
+        gdb_output = check_gdb_connection()  # tu función existente
+        if gdb_output is None:
+            logging.debug("GDB connection check returned None, recargando página...")
+            webbrowser.open(GDBGUI_URL, new=0)
+        elif "riscv32-e" not in gdb_output:
+            logging.debug("Monitor activo pero gdbgui no responde. Recargando página...")
+            webbrowser.open(GDBGUI_URL, new=0)
+
+
 
 def check_gdb_connection():
     """ Checks gdb status """
@@ -456,6 +504,7 @@ def start_openocd_thread(req_data):
         req_data['status'] += f"Error starting OpenOCD: {str(e)}\n"
         logging.error(f"Error starting OpenOCD: {str(e)}")
         return None
+    
 # (6.4) GDB + GDBGUI function    
 def start_gdbgui(req_data):
     route = os.path.join(BUILD_PATH, 'gdbinit')
@@ -499,6 +548,8 @@ def start_gdbgui(req_data):
         return jsonify(req_data)
     if check_uart_connection:
       logging.info("Starting GDBGUI...")
+      # Hilo monitorizando
+      threading.Thread(target=auto_reload_gdbgui, daemon=True).start()
       gdbgui_cmd = ['idf.py', '-C', BUILD_PATH, 'gdbgui', '-x', route, 'monitor']
       sleep(5)
       try:
