@@ -20,7 +20,7 @@
 #include "rom/uart.h"
 #include "esp_task_wdt.h"
 
-#define POOL_CAPACITY 65536  // 64 KB pool, as Jose Antonio puts it in his examples
+#define POOL_CAPACITY 65536  // 64 KB poolç
 char memory_pool[POOL_CAPACITY];
 int current_offset = 0;
 

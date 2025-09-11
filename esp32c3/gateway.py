@@ -31,7 +31,7 @@ import subprocess, os, signal
 import logging
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
 BUILD_PATH = '.' 
 process_holder = {}
@@ -318,7 +318,7 @@ def do_stop_flash_request(request):
 def check_uart_connection():
     """ Checks UART devices """
     devices = glob.glob('/dev/ttyUSB*')
-    logging.debug("Found devices:", devices)
+    logging.debug(f"Found devices: {devices}")
     if "/dev/ttyUSB0" in devices:
         logging.info("Found UART.")
         return 0
