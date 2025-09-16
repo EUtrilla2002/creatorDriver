@@ -27,6 +27,7 @@
 #include "esp_sleep.h"
 #include "esp_random.h"
 #include "driver/gpio.h"
+#include "syscall/ecall_task.h"
 
 void main(void);
 
@@ -57,6 +58,8 @@ void app_main(void)
 
   int x = esp_cpu_get_cycle_count();
   setvbuf(stdout, NULL, _IONBF, 0);
+
+  start_ecall_task();
 
   main();
 

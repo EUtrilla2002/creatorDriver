@@ -2,6 +2,7 @@ idf_component_register(
    SRCS
       "syscall/test_panic.c"
       "syscall/return_from_panic.S"
+      "syscall/ecall_tasks.c"
       "program.s"
       "creator-esp.c"
       "creator.s"

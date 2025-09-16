@@ -19,6 +19,11 @@
 #include <ctype.h>
 #include "rom/uart.h"
 #include "esp_task_wdt.h"
+#include "esp_cpu.h"
+#include "ecall_task.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
 
 #define POOL_CAPACITY 65536  // 64 KB poolç
 char memory_pool[POOL_CAPACITY];
@@ -43,43 +48,56 @@ void __real_esp_panic_handler(panic_info_t *info);
 
 
 void return_from_panic_handler(RvExcFrame *frm) __attribute__((noreturn));
+// int read_int(int timeout_ms) {
+//     uint8_t c;
+//     char buffer[16] = {0};
+//     int idx = 0;
 
-int read_int(){
 
-    unsigned char c;
-    char buffer[16]; 
-    int idx = 0;
-    while(1){
-        //while (!uart_rx_one_char(uart_no, &c)) { }
-        c = uart_rx_one_char_block();
-        // Check the char added
+//     // Si hay depurador conectado, no intentamos leer
+//     if (esp_cpu_dbgr_is_attached()) {
+//         esp_rom_printf("[WARN] Debugger detected, skipping UART input. Returning -1\n");
+//         return -1;
+//     }
 
-        //Is an space?? Finish it!!
-        if (c == '\n' || c == '\r') {
-            buffer[idx] = '\0';
-            esp_rom_printf("\n"); //echo
-            break;
-        }
-        //It is a number? add it!
-        if (isdigit(c)) {
-            if (idx < sizeof(buffer) - 1) {
-                
-                buffer[idx++] = c;
-                esp_rom_printf("%c", c);
-            }
-        }
-        //is another char? Ignore it
+//     // cuántas iteraciones de 100 µs caben en timeout_ms
+//     int loops = (timeout_ms * 1000) / 100;
 
-    }
-    //Transform into number
-    int value = 0;
-    for (int i = 0; buffer[i] != '\0'; i++) {
-        value = value * 10 + (buffer[i] - '0');
-    }
+//     while (loops-- > 0) {
+//         if (uart_rx_one_char(&c) == ETS_OK) {
+//             esp_rom_printf("%c", c);
 
-    return value;
+//             if (c == '\n' || c == '\r') {
+//                 buffer[idx] = '\0';
+//                 esp_rom_printf("\n");
+//                 break;
+//             }
 
-}
+//             if (c >= '0' && c <= '9') {
+//                 if (idx < (int)(sizeof(buffer) - 1)) {
+//                     buffer[idx++] = c;
+//                 }
+//             }
+
+//             // reset del timeout cada vez que recibimos algo
+//             loops = (timeout_ms * 1000) / 100;
+//         } else {
+//             esp_rom_delay_us(100); // espera mínima
+//         }
+//     }
+
+//     if (idx == 0) {
+//         esp_rom_printf("[WARN] No input (timeout %d ms). Returning -1\n", timeout_ms);
+//         return -1;
+//     }
+
+//     int value = 0;
+//     for (int i = 0; buffer[i] != '\0'; i++) {
+//         value = value * 10 + (buffer[i] - '0');
+//     }
+
+//     return value;
+// }
 char read_char() {
     unsigned char c;
     char last_char = 0;
@@ -124,6 +142,7 @@ IRAM_ATTR void __wrap_esp_panic_handler(panic_info_t *info)
     if ((frm->mcause == 0x0000000b || frm->mcause == 0x00000008) && g_override_ecall == true) { //Only catches Ecall syscalls
         disable_all_hw_watchdogs();
         int cause = frm->a7;
+        
         //esp_rom_printf("Causa del panic (a7): %d\n", cause);
         switch (cause) {
             case 1: { //Print int
@@ -145,8 +164,11 @@ IRAM_ATTR void __wrap_esp_panic_handler(panic_info_t *info)
                 break;
             }
             case 5: { // Read int
-                int number_read = read_int();
-                frm->a0 = number_read;
+                // int number_read = read_int(10000);
+                // frm->a0 = number_read;
+                enqueue_task_ecall(ECALL_READ_INT, frm);
+                //esp_rom_printf("[INFO] Waiting for ECALL_TASK to read int...\n");
+                //taskYIELD();
                 break;
             }
             case 6:{ // Read float TODO
