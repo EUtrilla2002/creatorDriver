@@ -318,7 +318,7 @@ def do_stop_flash_request(request):
 def check_uart_connection():
     """ Checks UART devices """
     devices = glob.glob('/dev/ttyUSB*')
-    logging.debug(f"Found devices: {devices}")
+    logging.debug("Found devices:", devices)
     if "/dev/ttyUSB0" in devices:
         logging.info("Found UART.")
         return 0
@@ -446,7 +446,7 @@ def start_openocd_thread(req_data):
     try:
         thread = threading.Thread(
             target=monitor_openocd_output,
-            args=(req_data, ['openocd', '-f', './openscript.cfg'], 'openocd'),
+            args=(req_data, ['idf.py', '-C', BUILD_PATH, 'openocd'], 'openocd'),
             daemon=True
         )
         thread.start()
@@ -456,7 +456,7 @@ def start_openocd_thread(req_data):
         req_data['status'] += f"Error starting OpenOCD: {str(e)}\n"
         logging.error(f"Error starting OpenOCD: {str(e)}")
         return None
-# (6.4) GDBGUI function    
+# (6.4) GDB + GDBGUI function    
 def start_gdbgui(req_data):
     route = os.path.join(BUILD_PATH, 'gdbinit')
     logging.debug(f"GDB route: {route}")
@@ -468,6 +468,35 @@ def start_gdbgui(req_data):
         req_data['status'] += f"GDB route: {route} does not exist.\n"
         return jsonify(req_data)
     req_data['status'] = ''
+    # Starting up GDB session
+    logging.info("Starting GDB...") 
+    gdb_cmd = ['idf.py', '-C', BUILD_PATH, 'gdb', '-x', route]
+    try:
+      subprocess.Popen(gdb_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        
+    except Exception as e:
+        logging.error("Failed to start GDB: %s", e)
+        req_data['status'] += f"Error during GDB setup: {e}\n"
+        return jsonify(req_data)
+    try:
+        output = check_gdb_connection()
+        # while "riscv32-e" not in output:
+        #     time.sleep(1)
+        #     output = check_gdb_connection() 
+        timeout = 10  
+        start = time()
+        while ("riscv32-e" not in output or "CLOSE_WAIT" in output) and time() - start < timeout:
+            sleep(1)
+            output = check_gdb_connection()
+        if "riscv32-e" not in output:
+            logging.error("Timeout waiting for GDB connection.")
+            req_data['status'] += "Timeout waiting for GDB connection.\n"
+            return jsonify(req_data)                
+        logging.debug("'riscv32-e' detected on port 3333. Executing kill_all_processes.")
+        kill_all_processes("riscv32-e")   
+    except Exception as e:
+        req_data['status'] += f"Error during GDB setup: {e}\n"
+        return jsonify(req_data)
     if check_uart_connection:
       logging.info("Starting GDBGUI...")
       gdbgui_cmd = ['idf.py', '-C', BUILD_PATH, 'gdbgui', '-x', route, 'monitor']

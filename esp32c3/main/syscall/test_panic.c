@@ -19,8 +19,13 @@
 #include <ctype.h>
 #include "rom/uart.h"
 #include "esp_task_wdt.h"
+#include "hal/cpu_hal.h"
+#include <stdbool.h>
+#include <stdint.h>
 
-#define POOL_CAPACITY 65536  // 64 KB poolç
+
+
+#define POOL_CAPACITY 65536  // 64 KB pool
 char memory_pool[POOL_CAPACITY];
 int current_offset = 0;
 
@@ -37,49 +42,59 @@ void disable_all_hw_watchdogs() {
 }
 
 extern void esp_panic_handler(panic_info_t *info);
-volatile bool g_override_ecall = true;
+extern void ecall_trampoline_read_int(uint32_t next_pc);
 
 void __real_esp_panic_handler(panic_info_t *info);
 
 
 void return_from_panic_handler(RvExcFrame *frm) __attribute__((noreturn));
 
-int read_int(){
+volatile bool g_debug_mode = false;
 
-    unsigned char c;
-    char buffer[16]; 
-    int idx = 0;
-    while(1){
-        //while (!uart_rx_one_char(uart_no, &c)) { }
-        c = uart_rx_one_char_block();
-        // Check the char added
+// bool is_debugging(void) {
+//     uint32_t dmstatus = DPORT_REG_READ(DPORT_CORE0_DEBUG_MODULE_STATUS_REG);
+//     return (dmstatus & 0x1) != 0;
+// }
 
-        //Is an space?? Finish it!!
-        if (c == '\n' || c == '\r') {
-            buffer[idx] = '\0';
-            esp_rom_printf("\n"); //echo
-            break;
-        }
-        //It is a number? add it!
-        if (isdigit(c)) {
-            if (idx < sizeof(buffer) - 1) {
+// int read_int(){
+
+//     if ( g_debug_mode) {
+//         return 0; // valor por defecto en depuración
+//     }
+//     unsigned char c;
+//     char buffer[16]; 
+//     int idx = 0;
+//     while(1){
+//         //while (!uart_rx_one_char(uart_no, &c)) { }
+//         c = uart_rx_one_char_block();
+//         // Check the char added
+
+//         //Is an space?? Finish it!!
+//         if (c == '\n' || c == '\r') {
+//             buffer[idx] = '\0';
+//             esp_rom_printf("\n"); //echo
+//             break;
+//         }
+//         //It is a number? add it!
+//         if (isdigit(c)) {
+//             if (idx < sizeof(buffer) - 1) {
                 
-                buffer[idx++] = c;
-                esp_rom_printf("%c", c);
-            }
-        }
-        //is another char? Ignore it
+//                 buffer[idx++] = c;
+//                 esp_rom_printf("%c", c);
+//             }
+//         }
+//         //is another char? Ignore it
 
-    }
-    //Transform into number
-    int value = 0;
-    for (int i = 0; buffer[i] != '\0'; i++) {
-        value = value * 10 + (buffer[i] - '0');
-    }
+//     }
+//     //Transform into number
+//     int value = 0;
+//     for (int i = 0; buffer[i] != '\0'; i++) {
+//         value = value * 10 + (buffer[i] - '0');
+//     }
 
-    return value;
+//     return value;
 
-}
+// }
 char read_char() {
     unsigned char c;
     char last_char = 0;
@@ -121,7 +136,7 @@ void read_string(char *dest, int length) {
 IRAM_ATTR void __wrap_esp_panic_handler(panic_info_t *info)
 {
     RvExcFrame *frm = (RvExcFrame *)info->frame;
-    if ((frm->mcause == 0x0000000b || frm->mcause == 0x00000008) && g_override_ecall == true) { //Only catches Ecall syscalls
+    if ((frm->mcause == 0x0000000b || frm->mcause == 0x00000008)) { //Only catches Ecall syscalls
         disable_all_hw_watchdogs();
         int cause = frm->a7;
         //esp_rom_printf("Causa del panic (a7): %d\n", cause);
@@ -129,32 +144,42 @@ IRAM_ATTR void __wrap_esp_panic_handler(panic_info_t *info)
             case 1: { //Print int
                 int value = frm->a0;
                 esp_rom_printf("%d\n", value);
+                frm->mepc += 4;
                 break;
             }
             case 2: { //Print float TODO
                 esp_rom_printf("\033[1;31mFloat number operations not registered yet\033[0m\n");
+                frm->mepc += 4;
                 break;
             }
             case 3: { //Print double TODO
                 esp_rom_printf("\033[1;31mDouble number operations not registered yet\033[0m\n");
+                frm->mepc += 4;
                 break;
             }
             case 4: { //Print string
                 char* cadena = (char*) frm->a0;
                 esp_rom_printf("%s\n", cadena);
+                frm->mepc += 4;
                 break;
             }
             case 5: { // Read int
-                int number_read = read_int();
-                frm->a0 = number_read;
+                // int number_read = read_int();
+                // frm->a0 = number_read;
+                // break;
+                uint32_t next_pc = frm->mepc + 4;
+                frm->mepc = (uintptr_t)ecall_trampoline_read_int;  
+                frm->a0   = next_pc;  // argumento al trampolín
                 break;
             }
             case 6:{ // Read float TODO
                 esp_rom_printf("\033[1;31mFloat number operations not registered yet\033[0m\n");
+                frm->mepc += 4;
                 break;
             }
             case 7:{  //Read double  TODO
                 esp_rom_printf("\033[1;31mDouble number operations not registered yet\033[0m\n");
+                frm->mepc += 4;
                 break;
             }
             case 8:{ //Read string
@@ -173,14 +198,17 @@ IRAM_ATTR void __wrap_esp_panic_handler(panic_info_t *info)
                     current_offset += increment;
                     frm->a0 = (int)prev_brk; 
                 }
+                frm->mepc += 4;
                 break;
             }
             case 10: { //exit
+                frm->mepc = frm->ra;
                 break;
             }
             case 11:{  //Print char
                 char caract = (char) frm->a0;
                 esp_rom_printf("%c\n", caract);
+                frm->mepc += 4;
                 break;
             } 
             case 12:{ //Read char
@@ -192,18 +220,6 @@ IRAM_ATTR void __wrap_esp_panic_handler(panic_info_t *info)
                 esp_rom_printf("Not an ecall registered\n");
                 break;
         }
-
-
-        //frm->mepc = frm->ra;
-        if (cause == 10)
-        {
-            frm->mepc = frm->ra;
-        }
-        else
-        {
-            frm->mepc += 4;
-        }
-        
         return_from_panic_handler(frm);
     } else {
         __real_esp_panic_handler(info); //Other fatal errors are treated as usual
