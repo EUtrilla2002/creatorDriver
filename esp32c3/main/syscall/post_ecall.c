@@ -25,7 +25,7 @@
 
 
 // El atributo noreturn es opcional, pero avisa al compilador que no retorna normalmente.
-void __attribute__((noreturn)) ecall_trampoline_read_int(uint32_t next_pc);
+void __attribute__((noreturn)) ecall_trampoline_read_int(uint32_t next_pc, uint32_t return_address);
 
 int read_int(){
     unsigned char c;
@@ -63,70 +63,83 @@ int read_int(){
 
 }
 
-void __attribute__((noreturn)) ecall_trampoline_read_int(uint32_t next_pc);
+void __attribute__((noreturn)) ecall_trampoline_read_int(uint32_t next_pc, uint32_t return_address);
 
-void ecall_trampoline_read_int(uint32_t next_pc)
+void ecall_trampoline_read_int(uint32_t next_pc, uint32_t return_address)
 {
- __asm__ volatile(
-        "addi sp, sp, -96\n"      // ajustar según cuantos registros guardes
-        "sw t0, 0(sp)\n"
-        "sw t1, 4(sp)\n"
-        "sw t2, 8(sp)\n"
-        "sw t3, 12(sp)\n"
-        "sw t4, 16(sp)\n"
-        "sw t5, 20(sp)\n"
-        "sw t6, 24(sp)\n"
-        "sw s0, 28(sp)\n"
-        "sw s1, 32(sp)\n"
-        "sw s2, 36(sp)\n"
-        "sw s3, 40(sp)\n"
-        "sw s4, 44(sp)\n"
-        "sw s5, 48(sp)\n"
-        "sw s6, 52(sp)\n"
-        "sw s7, 56(sp)\n"
-        "sw s8, 60(sp)\n"
-        "sw s9, 64(sp)\n"
-        "sw s10,68(sp)\n"
-        "sw s11,72(sp)\n"
-        "sw ra, 76(sp)\n"
-        :
+    if (next_pc == 0) {
+        esp_rom_printf("Error: next_pc es NULL!\n");
+        while(1);
+    }
+ register uintptr_t sp_orig asm("sp");
+    register uintptr_t sp_after asm("sp");
+
+    __asm__ volatile(
+        // --- Guardar registros en pila ---
+        "addi sp, sp, -96\n"
+        "sw ra,   0(sp)\n"
+        "sw t0,   4(sp)\n"
+        "sw t1,   8(sp)\n"
+        "sw t2,  12(sp)\n"
+        "sw t3,  16(sp)\n"
+        "sw t4,  20(sp)\n"
+        "sw t5,  24(sp)\n"
+        "sw t6,  28(sp)\n"
+        "sw s0,  32(sp)\n"
+        "sw s1,  36(sp)\n"
+        "sw s2,  40(sp)\n"
+        "sw s3,  44(sp)\n"
+        "sw s4,  48(sp)\n"
+        "sw s5,  52(sp)\n"
+        "sw s6,  56(sp)\n"
+        "sw s7,  60(sp)\n"
+        "sw s8,  64(sp)\n"
+        "sw s9,  68(sp)\n"
+        "sw s10, 72(sp)\n"
+        "sw s11, 76(sp)\n"
+
+        // --- Restaurar registros ---
+        "lw ra,   0(sp)\n"
+        "lw t0,   4(sp)\n"
+        "lw t1,   8(sp)\n"
+        "lw t2,  12(sp)\n"
+        "lw t3,  16(sp)\n"
+        "lw t4,  20(sp)\n"
+        "lw t5,  24(sp)\n"
+        "lw t6,  28(sp)\n"
+        "lw s0,  32(sp)\n"
+        "lw s1,  36(sp)\n"
+        "lw s2,  40(sp)\n"
+        "lw s3,  44(sp)\n"
+        "lw s4,  48(sp)\n"
+        "lw s5,  52(sp)\n"
+        "lw s6,  56(sp)\n"
+        "lw s7,  60(sp)\n"
+        "lw s8,  64(sp)\n"
+        "lw s9,  68(sp)\n"
+        "lw s10, 72(sp)\n"
+        "lw s11, 76(sp)\n"
+
+        // --- Restaurar SP ---
+        "addi sp, sp, 96\n"
+
+        // --- Salida de SP a variable C ---
+        : "=r"(sp_after)
         :
         : "memory"
     );
 
-    // Ejecutar la syscall simulada
-    int result = read_int();
+    // --- Chequeo de SP ---
+    // printf("SP original = %p, SP after trampoline = %p\n", 
+    //        (void*)sp_orig, (void*)sp_after);
 
-    // Guardar el resultado en a0
-    __asm__ volatile("mv a0, %0" :: "r"(result));
-
-    // Restaurar todos los registros guardados
+    // --- Salto a next_pc sin modificar RA ---
     __asm__ volatile(
-        "lw t0, 0(sp)\n"
-        "lw t1, 4(sp)\n"
-        "lw t2, 8(sp)\n"
-        "lw t3, 12(sp)\n"
-        "lw t4, 16(sp)\n"
-        "lw t5, 20(sp)\n"
-        "lw t6, 24(sp)\n"
-        "lw s0, 28(sp)\n"
-        "lw s1, 32(sp)\n"
-        "lw s2, 36(sp)\n"
-        "lw s3, 40(sp)\n"
-        "lw s4, 44(sp)\n"
-        "lw s5, 48(sp)\n"
-        "lw s6, 52(sp)\n"
-        "lw s7, 56(sp)\n"
-        "lw s8, 60(sp)\n"
-        "lw s9, 64(sp)\n"
-        "lw s10,68(sp)\n"
-        "lw s11,72(sp)\n"
-        "lw ra, 76(sp)\n"
-        "addi sp, sp, 96\n"
-        "jr %0\n"
+        "mv t6, %0\n"  // copia next_pc a registro temporal
+        "jalr t6\n"      // salto incondicional
         :
         : "r"(next_pc)
-        : "memory"
+        : "t6", "memory"
     );
 
     __builtin_unreachable();

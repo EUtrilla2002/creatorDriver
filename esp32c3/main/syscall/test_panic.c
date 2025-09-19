@@ -168,8 +168,12 @@ IRAM_ATTR void __wrap_esp_panic_handler(panic_info_t *info)
                 // frm->a0 = number_read;
                 // break;
                 uint32_t next_pc = frm->mepc + 4;
-                frm->mepc = (uintptr_t)ecall_trampoline_read_int;  
+                uint32_t return_address = frm->ra;
+                // esp_rom_printf("Trampolín a read_int, next_pc: %08x\n", next_pc);
+                // esp_rom_printf("Direccion de vuelta: %08x\n", return_address);
+                frm->mepc = (uintptr_t)ecall_trampoline_read_int;
                 frm->a0   = next_pc;  // argumento al trampolín
+                frm->a1   = return_address; // dirección de vuelta tras el trampolín
                 break;
             }
             case 6:{ // Read float TODO
