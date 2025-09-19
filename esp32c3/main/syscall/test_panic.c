@@ -43,22 +43,17 @@ void __real_esp_panic_handler(panic_info_t *info);
 
 
 void return_from_panic_handler(RvExcFrame *frm) __attribute__((noreturn));
+static char buffer[16];
 
-int read_int(){
-
+int read_buffer(){
     unsigned char c;
-    char buffer[16]; 
     int idx = 0;
-    while(1){
-        //while (!uart_rx_one_char(uart_no, &c)) { }
-        c = uart_rx_one_char_block();
-        // Check the char added
-
-        //Is an space?? Finish it!!
+    uart_rx_one_char(&c);
+    //Is an space?? Finish it!!
         if (c == '\n' || c == '\r') {
             buffer[idx] = '\0';
-            esp_rom_printf("\n"); //echo
-            break;
+            //esp_rom_printf("\n"); //echo
+            return -1;
         }
         //It is a number? add it!
         if (isdigit(c)) {
@@ -66,16 +61,78 @@ int read_int(){
                 
                 buffer[idx++] = c;
                 esp_rom_printf("%c", c);
+                return 0;
             }
         }
         //is another char? Ignore it
+        
+        return -1;
+}
+void wait_us(int delay)
+{
+    int sum = 0;
+    for (int x = 1; x < delay; x++)
+    {
+        sum ++;
+    }
+}
+
+int read_int(){
+    int value = 0;
+    int i = -1;
+    int sum = 0;
+    while (i == -1){
+        i =   read_buffer();
+        if (i == -1){
+            //
+            for (int x =1;x< 10000; x++){
+                sum ++;
+
+            }
+        }
 
     }
+
+
+
+    // while( i < 500){
+    //     read_buffer();
+    //     //function_aux(i);
+    //     ets_delay_us(750);
+    //     i ++;
+    // }
+    // while(i < 100000000000000){
+    //     //while (!uart_rx_one_char(uart_no, &c)) { }
+    //     uart_rx_one_char(&c);
+    //     // Check the char added
+
+    //     //Is an space?? Finish it!!
+    //     if (c == '\n' || c == '\r') {
+    //         buffer[idx] = '\0';
+    //         esp_rom_printf("\n"); //echo
+    //         break;
+    //     }
+    //     //It is a number? add it!
+    //     if (isdigit(c)) {
+    //         if (idx < sizeof(buffer) - 1) {
+                
+    //             buffer[idx++] = c;
+    //             esp_rom_printf("%c", c);
+    //         }
+    //     }
+    //     //is another char? Ignore it
+
+    //     i++;
+
+    // }
     //Transform into number
-    int value = 0;
-    for (int i = 0; buffer[i] != '\0'; i++) {
-        value = value * 10 + (buffer[i] - '0');
-    }
+    // if (strlen(buffer) > 0) {
+    //     for (int i = 0; buffer[i] != '\0'; i++) {
+    //         value = value * 10 + (buffer[i] - '0');
+    //     }
+    // }
+
+    //int value = 1234; // --- IGNORE ---
 
     return value;
 
