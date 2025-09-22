@@ -20,7 +20,7 @@
 #include "rom/uart.h"
 #include "esp_task_wdt.h"
 
-#define POOL_CAPACITY 65536  // 64 KB pool, as Jose Antonio puts it in his examples
+#define POOL_CAPACITY 65536  // 64 KB poolç
 char memory_pool[POOL_CAPACITY];
 int current_offset = 0;
 
@@ -43,79 +43,135 @@ void __real_esp_panic_handler(panic_info_t *info);
 
 
 void return_from_panic_handler(RvExcFrame *frm) __attribute__((noreturn));
+// -------------Read int from UART0
+static char buffer_int[16];
+static int idx = 0;
 
-int read_int(){
+int read_buffer_int(){
+    unsigned char c = '\0';
 
-    unsigned char c;
-    char buffer[16]; 
-    int idx = 0;
-    while(1){
-        //while (!uart_rx_one_char(uart_no, &c)) { }
-        c = uart_rx_one_char_block();
-        // Check the char added
-
-        //Is an space?? Finish it!!
+    uart_rx_one_char(&c);
+    //Is an space?? Finish it!!
         if (c == '\n' || c == '\r') {
-            buffer[idx] = '\0';
+            buffer_int[idx++] = '\0';
             esp_rom_printf("\n"); //echo
-            break;
+            if (idx > 0) //Buffer has things
+            {
+                idx = 0;
+                return 0;
+            }
+            else{   return -1;  }
+            
         }
-        //It is a number? add it!
+    //Number: wait until another num comes up OR a \n
         if (isdigit(c)) {
-            if (idx < sizeof(buffer) - 1) {
-                
-                buffer[idx++] = c;
+            if (idx < sizeof(buffer_int) - 1) {  
+                buffer_int[idx] = c;
                 esp_rom_printf("%c", c);
+                idx++;
+                return -1;
             }
         }
-        //is another char? Ignore it
-
-    }
-    //Transform into number
+    //TODO: Protocol for char instead of number
+        
+        return -1;
+}
+int read_int(){
     int value = 0;
-    for (int i = 0; buffer[i] != '\0'; i++) {
-        value = value * 10 + (buffer[i] - '0');
-    }
+    int i = -1;
+    int sum = 0;
+    while (i == -1){
+        i =   read_buffer_int();
+        if (i == -1){
+            //
+            for (int x =1;x< 1000; x++){
+                sum ++;
 
+            }
+        }      
+    }
+    // Transform into number
+    for (int z = 0; buffer_int[z] != '\0'; z++) {
+            value = value * 10 + (buffer_int[z] - '0');
+    }
+    memset(buffer_int, 0, sizeof(buffer_int));  
     return value;
 
 }
-char read_char() {
-    unsigned char c;
-    char last_char = 0;
+//------------- Read char from UART0
+char read_buffer_char(){
+    unsigned char c = '\0';
+    //esp_rom_printf("Value: %c",c);
 
-    while (1) {
-        c = uart_rx_one_char_block();
-
-        // return char
-        if (c == '\n' || c == '\r') {
-            esp_rom_printf("\n"); //echo
-            return last_char;
-        }
-
-        // Last char readed
-        last_char = (char)c;
-        esp_rom_printf("%c", last_char);
+    uart_rx_one_char(&c);
+    if (c != '\0') {
+        esp_rom_printf("%c", c);
+        return c;
     }
+    else{ return '\0'; }
+    
+    return -1;
 }
-void read_string(char *dest, int length) {
-    unsigned char c;
-    int idx = 0;
 
-    while (1) {
-        c = uart_rx_one_char_block();
+char read_char() {
+    char value = '\0';
+    int sum =0;
+    while (value == '\0'){
+        value =   read_buffer_char(); 
+        if (value == '\0'){
+            for (int x =1;x< 1000; x++){
+                sum ++;
 
-        if (c == '\n' || c == '\r') {
-            dest[idx] = '\0';
-            esp_rom_printf("\n"); //echo
-            break;
-        }
-
-        if (idx < length - 1) {
-            dest[idx++] = c;
-            esp_rom_printf("%c", c); //echo
+            }
         }
     }
+    return value;
+}
+//------------- Read string from UART0
+int read_buffer_string(char *dest, int length){
+    unsigned char c = '\0';
+
+    uart_rx_one_char(&c);
+    //Is an space?? Finish it!!
+    if (c == '\n' || c == '\r') {
+        dest[idx++] = '\0';
+        esp_rom_printf("\n"); //echo
+        if (idx > 0 || idx >= length) //Buffer has things or surpass the length
+        {
+            idx = 0;
+            return 0;
+        }
+        else{   return -1;  }
+        
+    }
+    //Wait until another char comes
+     if (c != '\0') {
+        if (idx < length) {  
+                dest[idx] = c;
+                esp_rom_printf("%c", c);
+                idx++;
+                return -1;
+        }
+    }
+    //TODO: Protocol for char instead of number
+        
+        return -1;
+}
+
+void read_string(char *dest, int length) {
+    int value = 0;
+    int i = -1;
+    int sum = 0;
+    while (i == -1){
+        i =   read_buffer_string(dest,length);
+        if (i == -1){
+            //
+            for (int x =1;x< 1000; x++){
+                sum ++;
+
+            }
+        }      
+    } 
 }
 
 IRAM_ATTR void __wrap_esp_panic_handler(panic_info_t *info)
