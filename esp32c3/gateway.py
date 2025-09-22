@@ -253,6 +253,18 @@ def do_monitor_request(request):
     target_device      = req_data['target_port']
     req_data['status'] = ''
 
+    # Kill debug process
+
+    if 'openocd' in process_holder:
+      logging.debug('Killing OpenOCD')
+      kill_all_processes("openocd")
+      process_holder.pop('openocd', None)
+
+    if 'gdbgui' in process_holder:
+      logging.debug('Killing GDBGUI')
+      kill_all_processes("gdbgui")
+      process_holder.pop('gdbgui', None)
+
     do_cmd(req_data, ['idf.py', '-p', target_device, 'monitor'])
 
   except Exception as e:
