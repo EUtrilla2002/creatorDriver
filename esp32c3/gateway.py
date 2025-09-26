@@ -360,27 +360,47 @@ def check_uart_connection():
         logging.error("NO UART port found.")
         return 1
     
+# def check_jtag_connection():
+#     """ Checks JTAG devices """
+#     command = ["ls", "/dev/tty*"]
+#     try:
+#         lsof = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+#         output, errs = lsof.communicate(timeout=5) 
+#         logging.info("JTAG connection output: %s", output.decode(errors="ignore"))
+#         if output:
+#             output_text = output.decode(errors="ignore")
+#             logging.info("JTAG connection output: %s", output_text)
+#             if "/dev/ttyACM0" in output_text:
+#                 logging.info("JTAG found")
+#                 return True
+#             else:
+#                 logging.warning("JTAG missing")
+#                 return False
+#     except subprocess.TimeoutExpired:
+#         lsof.kill()
+#         output, errs = lsof.communicate()
+#     except Exception as e:
+#         logging.error(f"Error checking JTAG: {e}")
+#         return None
+#     return False 
+import glob
+
 def check_jtag_connection():
-    """ Checks JTAG devices """
-    command = ["lsusb"]
+    """Checks for presence of tty devices that might be JTAG"""
     try:
-        lsof = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        output, errs = lsof.communicate(timeout=5)  
-        if output:
-            output_text = output.decode(errors="ignore")
-            if "JTAG" in output_text:
-                logging.info("JTAG found")
-                return True
-            else:
-                logging.warning("JTAG missing")
-                return False
-    except subprocess.TimeoutExpired:
-        lsof.kill()
-        output, errs = lsof.communicate()
+        devices = glob.glob("/dev/tty*")
+        # logging.info("Devices found: %s", devices)
+
+        if "/dev/ttyACM0" in devices:
+            logging.info("JTAG (ttyACM0) found")
+            return True
+        else:
+            logging.warning("JTAG (ttyACM0) missing")
+            return False
+
     except Exception as e:
         logging.error(f"Error checking JTAG: {e}")
-        return None
-    return False    
+        return None    
 # --- (6.2) Debug processes monitoring functions ---
 
 def check_gdb_connection():
@@ -504,7 +524,7 @@ def start_gdbgui(req_data):
     req_data['status'] = ''
     if check_uart_connection:
       logging.info("Starting GDBGUI...")
-      gdbgui_cmd = ['idf.py', '-C', BUILD_PATH, 'gdbgui', '-x', route, 'monitor']
+      gdbgui_cmd = ['idf.py', '-C', BUILD_PATH, 'gdbgui', '--gdbinit', route, 'monitor']
       sleep(5)
       try:
           process_holder['gdbgui'] = subprocess.run(
