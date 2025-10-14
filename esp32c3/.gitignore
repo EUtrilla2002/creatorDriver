@@ -1,5 +1,7 @@
 sdkconfig
 sdkconfig.old
+sdkconfig.defaults
 tmp_assembly.s
 build
 main/program.s
+openocd.log

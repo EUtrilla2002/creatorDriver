@@ -1,6 +1,12 @@
-# Troubleshooting with access rights
+# Troubleshooting
+Logs are generated on the `openocd.log` file.
 
-## Error: libusb_bulk_write error: LIBUSB_ERROR_NO_DEVICE
+Sometaimes, you can just unplug, replug and run again, or refresh the GDBGUI
+page. If it shows another type of issue, please send it to the official page.
+Feedback makes us grow :).
+
+
+## Error: `gdb_exception_error` -- `libusb_bulk_write error: LIBUSB_ERROR_NO_DEVICE`
 
 This problem happens because the user doesn't have permission to write to
 the JTAG USB device, located in `/dev/bus/usb/003/XXX` (where `XXX` is a

@@ -1,0 +1,10 @@
+[project]
+name = "creatordriver"
+version = "0.1.0"
+description = "CREATOR Driver for the ESP-32"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "flask-cors>=6.0.1",
+    "gdbgui>=0.15.2.0",
+]
