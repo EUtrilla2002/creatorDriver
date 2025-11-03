@@ -141,7 +141,7 @@ def creator_build(file_in, file_out):
 
 def do_cmd(req_data, cmd_array):
   try:
-    result = subprocess.run(cmd_array, capture_output=False, timeout=80)
+    result = subprocess.run(cmd_array, capture_output=False, timeout=60)
   except:
     pass
 
@@ -155,7 +155,7 @@ def do_cmd(req_data, cmd_array):
 
 def do_cmd_output(req_data, cmd_array):
   try:
-    result = subprocess.run(cmd_array, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=160)
+    result = subprocess.run(cmd_array, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=60)
   except:
     pass
 
