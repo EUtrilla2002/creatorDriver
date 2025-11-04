@@ -29,12 +29,13 @@ from flask import Flask, request, jsonify, send_file, Response
 from flask_cors import CORS, cross_origin
 import subprocess, os, signal
 import logging
-
+import serial
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 BUILD_PATH = '.' 
 process_holder = {}
+
 
 #### (*) Cleaning functions
 def do_fullclean_request(request):
@@ -43,14 +44,15 @@ def do_fullclean_request(request):
     req_data = request.get_json()
     target_device      = req_data['target_port']
     req_data['status'] = ''
+    error = 0
     # flashing steps...
-    if error ==0:
-      do_cmd_output(req_data, ['idf.py','-C', BUILD_PATH,'fullclean'])
+    if error == 0:
+      do_cmd_output(req_data, ['idf.py','-C', BUILD_PATH,'fullclean'])  
     if error == 0:
        req_data['status'] += 'Full clean done.\n'    
   except Exception as e:
     req_data['status'] += str(e) + '\n'
-  return jsonify(req_data)  
+  return jsonify(req_data)
 
 def do_eraseflash_request(request):
   """ Erase flash the target device """
@@ -59,6 +61,7 @@ def do_eraseflash_request(request):
     target_device      = req_data['target_port']
     req_data['status'] = ''
     # flashing steps...
+    error = 0
     if error == 0:
       error = do_cmd_output(req_data, ['idf.py','-C', BUILD_PATH,'-p',target_device,'erase-flash'])
     if error == 0:
@@ -79,7 +82,6 @@ def do_stop_monitor_request(request):
     if error == 0:
       req_data['status'] += 'Process stopped\n' 
     
-
   except Exception as e:
     req_data['status'] += str(e) + '\n'
 
@@ -115,7 +117,6 @@ def creator_build(file_in, file_out):
           fout.write("addi sp, sp, -8\n")
           fout.write("sw ra, 4(sp)\n")
           fout.write("sw a0, 0(sp)\n")
-
           fout.write("jal ra, _rdcycle\n")
           fout.write("mv "+ data[1] +", a0\n")
 
@@ -141,6 +142,7 @@ def do_cmd(req_data, cmd_array):
   try:
     result = subprocess.run(cmd_array, capture_output=False, timeout=60)
   except:
+    logging.error("Something failed")
     pass
 
   if result.stdout != None:
@@ -149,7 +151,6 @@ def do_cmd(req_data, cmd_array):
     req_data['error']   = result.returncode
 
   return req_data['error']
-
 
 def do_cmd_output(req_data, cmd_array):
   try:
@@ -197,7 +198,7 @@ def do_flash_request(request):
 
     # flashing steps...
     if error == 0 :
-      error = check_uart_connection()
+      error = check_uart_connection(target_device)
     if error != 0:
       req_data['status'] += 'No UART port found.\n'
       logging.error("No UART port found.")
@@ -284,107 +285,53 @@ def do_monitor_request(request):
       kill_all_processes("gdbgui")
       process_holder.pop('gdbgui', None)
 
-    do_cmd(req_data, ['idf.py', '-p', target_device, 'monitor'])
-
-  except Exception as e:
-    req_data['status'] += str(e) + '\n'
-
-  return jsonify(req_data)
-
-
-# (4) Flasing assembly program into target board
-def do_job_request(request):
-  try:
-    req_data = request.get_json()
-    target_device      = req_data['target_port']
-    target_board       = req_data['target_board']
-    asm_code           = req_data['assembly']
-    req_data['status'] = ''
-
-    # create temporal assembly file
-    text_file = open("tmp_assembly.s", "w")
-    ret = text_file.write(asm_code)
-    text_file.close()
-
-    # transform th temporal assembly file
-    error = creator_build('tmp_assembly.s', "main/program.s");
+    build_root = BUILD_PATH +'/build'
+    error = 0
+    error = check_uart_connection(target_device)
     if error != 0:
-        req_data['status'] += 'Error adapting assembly file...\n'
-
-    # flashing steps...
-    if error == 0:
-      error = do_cmd_output(req_data, ['idf.py',  'fullclean'])
-    if error == 0:
-      error = do_cmd_output(req_data, ['idf.py',  'set-target', target_board])
-    if error == 0:
-      error = do_cmd_output(req_data, ['idf.py', 'build'])
-    if error == 0:
-      error = do_cmd_output(req_data, ['idf.py', '-p', target_device, 'flash'])
-    if error == 0:
-      error = do_cmd_output(req_data, ['./gateway_monitor.sh', target_device, '50'])
-      error = do_cmd_output(req_data, ['cat', 'monitor_output.txt'])
-      error = do_cmd_output(req_data, ['rm', 'monitor_output.txt'])
-
-  except Exception as e:
-    req_data['status'] += str(e) + '\n'
-
-  return jsonify(req_data)
-
-
-# (5) Stop flashing
-def do_stop_flash_request(request):
-  try:
-    req_data = request.get_json()
-    req_data['status'] = ''
-    do_cmd(req_data, ['pkill',  'idf.py'])
-
-  except Exception as e:
-    req_data['status'] += str(e) + '\n'
-
-  return jsonify(req_data)
-
-# (6) Debug 
-
-# (6.1) Physical connections check   
-def check_uart_connection():
-    """ Checks UART devices """
-    devices = glob.glob('/dev/ttyUSB*')
-    logging.debug(f"Found devices: {devices}")
-    if "/dev/ttyUSB0" in devices:
-        logging.info("Found UART.")
-        return 0
-    elif devices:
-        logging.error("Other UART devices found (Is the name OK?).")
-        return 0
+      logging.info("No UART found")
+      req_data['status'] += "No UART port found\n"
+      return jsonify(req_data)
+    if os.path.isdir(build_root) and os.listdir(build_root):
+      logging.info("Build found")
+      do_cmd(req_data, ['idf.py', '-p', target_device, 'monitor'])
     else:
-        logging.error("NO UART port found.")
-        return 1
-    
-# def check_jtag_connection():
-#     """ Checks JTAG devices """
-#     command = ["ls", "/dev/tty*"]
-#     try:
-#         lsof = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-#         output, errs = lsof.communicate(timeout=5) 
-#         logging.info("JTAG connection output: %s", output.decode(errors="ignore"))
-#         if output:
-#             output_text = output.decode(errors="ignore")
-#             logging.info("JTAG connection output: %s", output_text)
-#             if "/dev/ttyACM0" in output_text:
-#                 logging.info("JTAG found")
-#                 return True
-#             else:
-#                 logging.warning("JTAG missing")
-#                 return False
-#     except subprocess.TimeoutExpired:
-#         lsof.kill()
-#         output, errs = lsof.communicate()
-#     except Exception as e:
-#         logging.error(f"Error checking JTAG: {e}")
-#         return None
-#     return False 
-import glob
+      req_data['status'] += "No ELF file found in build directory.\n"
+      logging.error("No elf found.")
+              
+  except Exception as e:
+    req_data['status'] += str(e) + '\n'
 
+  return jsonify(req_data)
+
+
+# (4) Debug 
+
+# (4.1) Physical connections check   
+def check_uart_connection(board):
+    """ Checks UART devices """
+    if board.startswith('/dev/ttyUSB'):
+      devices = glob.glob('/dev/ttyUSB*')
+      logging.debug(f"Found devices: {devices}")
+      if "/dev/ttyUSB0" in devices:
+          logging.info("Found UART.")
+          return 0
+      elif devices:
+          logging.error("Other UART devices found (Is the name OK?).")
+          return 0
+      else:
+          logging.error("NO UART port found.")
+          return 1
+    elif board.startswith('rfc2217'):
+      try:
+          ser = serial.serial_for_url(board, timeout=1)
+          ser.close()
+          logging.info("Found RFC2217 UART.")
+          return 0
+      except serial.SerialException as e:
+          logging.error(f"NO RFC2217 UART port found: {e}")
+          return 1  
+    
 def check_jtag_connection():
     """Checks for presence of tty devices that might be JTAG"""
     try:
@@ -400,8 +347,9 @@ def check_jtag_connection():
 
     except Exception as e:
         logging.error(f"Error checking JTAG: {e}")
-        return None    
-# --- (6.2) Debug processes monitoring functions ---
+        return None
+    return False    
+# --- (4.2) Debug processes monitoring functions ---
 
 def check_gdb_connection():
     """ Checks gdb status """
@@ -475,7 +423,7 @@ def kill_all_processes(process_name):
         if result.returncode != 0:
             logging.error(f"Error al intentar matar los procesos {process_name}. Salida: {result.stderr.strip()}")
         else:
-            logging.info(f"Todos los procesos '{process_name}' han sido eliminados.")
+            logging.debug(f"Todos los procesos '{process_name}' han sido eliminados.")
         
         return result.returncode
 
@@ -491,12 +439,11 @@ def kill_all_processes(process_name):
         logging.error(f"Ocurrió un error inesperado: {e}")
         return 1
 
-    
-# (6.3) OpenOCD Function
+# (4.3) OpenOCD Function
 def start_openocd_thread(req_data):
     target_board = req_data['target_board']
     script_board = './openocd_scripts/openscript_' + target_board + '.cfg'
-    logging.info(f"OpenOCD script: {script_board}")
+    logging.debug(f"OpenOCD script: {script_board}")
     try:
         thread = threading.Thread(
             target=monitor_openocd_output,
@@ -510,8 +457,10 @@ def start_openocd_thread(req_data):
         req_data['status'] += f"Error starting OpenOCD: {str(e)}\n"
         logging.error(f"Error starting OpenOCD: {str(e)}")
         return None
-# (6.4) GDBGUI function    
+
+# (4.4) GDBGUI function    
 def start_gdbgui(req_data):
+    target_device      = req_data['target_port']
     route = os.path.join(BUILD_PATH, 'gdbinit')
     logging.debug(f"GDB route: {route}")
     route = os.path.join(BUILD_PATH, 'gdbinit')
@@ -522,36 +471,35 @@ def start_gdbgui(req_data):
         req_data['status'] += f"GDB route: {route} does not exist.\n"
         return jsonify(req_data)
     req_data['status'] = ''
-    if check_uart_connection:
-      logging.info("Starting GDBGUI...")
-      gdbgui_cmd = ['idf.py', '-C', BUILD_PATH, 'gdbgui', '--gdbinit', route, 'monitor']
-      sleep(5)
-      try:
-          process_holder['gdbgui'] = subprocess.run(
-              gdbgui_cmd,
-              stdout=sys.stdout,
-              stderr=sys.stderr,
-              text=True
-          )
-          if process_holder['gdbgui'].returncode != -9 and process_holder['gdbgui'].returncode != 0:
-              logging.error(f"Command failed with return code {process_holder['gdbgui'].returncode}")
+    if check_uart_connection(target_device) != 0:
+      req_data['status'] += f"No UART found\n"
+      return jsonify(req_data)
+    
+    logging.info("Starting GDBGUI...")
+    gdbgui_cmd = ['idf.py', '-C', BUILD_PATH, 'gdbgui', '--gdbinit', route, 'monitor']
+    sleep(5)
+    try:
+        process_holder['gdbgui'] = subprocess.run(
+            gdbgui_cmd,
+            stdout=sys.stdout,
+            stderr=sys.stderr,
+            text=True
+        )
+        if process_holder['gdbgui'].returncode != -9 and process_holder['gdbgui'].returncode != 0:
+            logging.error(f"Command failed with return code {process_holder['gdbgui'].returncode}")
 
-      except subprocess.CalledProcessError as e:
-          logging.error("Failed to start GDBGUI: %s", e)
-          req_data['status'] += f"Error starting GDBGUI (code {e.returncode}): {e.stderr}\n"
-          return None
-      except Exception as e:
-          logging.error("Unexpected error in GDBGUI: %s", e)
-          req_data['status'] += f"Unexpected error starting GDBGUI: {e}\n"
-          return None
-      
-      req_data['status'] += f"Finished debug session: {e}\n"
-    else:
-      req_data['status'] += f"UART not connected: {e}\n"
+    except subprocess.CalledProcessError as e:
+        logging.error("Failed to start GDBGUI: %s", e)
+        req_data['status'] += f"Error starting GDBGUI (code {e.returncode}): {e.stderr}\n"
+        return None
+    except Exception as e:
+        logging.error("Unexpected error in GDBGUI: %s", e)
+        req_data['status'] += f"Unexpected error starting GDBGUI: {e}\n"
+        return None
+    
+    req_data['status'] += f"Finished debug session: {e}\n"
     return jsonify(req_data)
           
-
-
 def do_debug_request(request):
     global stop_event
     global process_holder
@@ -560,7 +508,6 @@ def do_debug_request(request):
         req_data = request.get_json()
         target_device = req_data['target_port']
         req_data['status'] = ''
-
         # Check .elf files in BUILD_PATH
         route = BUILD_PATH +'/build'
         logging.debug(f"Checking for ELF files in {route}")
@@ -576,7 +523,10 @@ def do_debug_request(request):
                 logging.debug('Killing OpenOCD')
                 kill_all_processes("openocd")
                 process_holder.pop('openocd', None)
-
+            # Check UART
+            if  check_uart_connection(target_device) != 0:
+                req_data['status'] += f"No UART found\n"
+                return jsonify(req_data)    
             # Check if JTAG is connected
             if not check_jtag_connection():
                 req_data['status'] += "No JTAG found\n"
@@ -603,6 +553,48 @@ def do_debug_request(request):
         logging.error(f"Exception in do_debug_request: {e}")
 
     return jsonify(req_data)
+
+
+# (5) Flasing assembly program into target board
+def do_job_request(request):
+  try:
+    req_data = request.get_json()
+    target_device      = req_data['target_port']
+    target_board       = req_data['target_board']
+    asm_code           = req_data['assembly']
+    req_data['status'] = ''
+
+    # create temporal assembly file
+    text_file = open("tmp_assembly.s", "w")
+    ret = text_file.write(asm_code)
+    text_file.close()
+
+    # transform th temporal assembly file
+    error = creator_build('tmp_assembly.s', "main/program.s");
+    if error != 0:
+        req_data['status'] += 'Error adapting assembly file...\n'
+
+    # flashing steps...
+    if error == 0:
+      error = do_cmd_output(req_data, ['idf.py',  'fullclean'])
+    if error == 0:
+      error = do_cmd_output(req_data, ['idf.py',  'set-target', target_board])
+    if error == 0:
+      error = do_cmd_output(req_data, ['idf.py', 'build'])
+    if error == 0:
+      error = do_cmd_output(req_data, ['idf.py', '-p', target_device, 'flash'])
+    if error == 0:
+      error = do_cmd_output(req_data, ['./gateway_monitor.sh', target_device, '50'])
+      error = do_cmd_output(req_data, ['cat', 'monitor_output.txt'])
+      error = do_cmd_output(req_data, ['rm', 'monitor_output.txt'])
+
+  except Exception as e:
+    req_data['status'] += str(e) + '\n'
+
+  return jsonify(req_data)
+
+
+
 
 
 # Setup flask and cors:
@@ -633,41 +625,35 @@ def post_flash():
 def post_monitor():
   return do_monitor_request(request)
 
-# (4) POST /job -> flash + monitor
-@app.route("/job", methods=["POST"])
-@cross_origin()
-def post_job():
-  return do_job_request(request)
-
-# (5) POST /stop -> cancel
-@app.route("/stop", methods=["POST"])
-@cross_origin()
-def post_stop_flash():
-  return do_stop_flash_request(request)
-
-# (6) POST /fullclean -> clean build directory
+# (4) POST /fullclean -> clean build directory
 @app.route("/fullclean", methods=["POST"])
 @cross_origin()
 def post_fullclean_flash():
   return do_fullclean_request(request)
 
-# (7) POST /eraseflash -> clean board flash
+# (5) POST /eraseflash -> clean board flash
 @app.route("/eraseflash", methods=["POST"])
 @cross_origin()
 def post_erase_flash():
   return do_eraseflash_request(request)
 
-# (8) POST /debug -> debug
+# (6) POST /debug -> debug
 @app.route("/debug", methods=["POST"])
 @cross_origin()
 def post_debug():
   return do_debug_request(request)
 
-# (9) Stop monitor
+# (7) Stop monitor
 @app.route("/stopmonitor", methods=["POST"])
 @cross_origin()
 def post_stop_monitor():
   return do_stop_monitor_request(request)
+
+# (8) POST /job -> flash + monitor
+@app.route("/job", methods=["POST"])
+@cross_origin()
+def post_job():
+  return do_job_request(request)
 
 
 # Run
