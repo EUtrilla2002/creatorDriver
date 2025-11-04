@@ -275,6 +275,10 @@ def do_monitor_request(request):
     req_data['status'] = ''
 
     # Kill debug process
+    if running_in_docker() and openocd_alive('host.docker.internal', 4444):
+       logging.error("Stop openocd in your local machine\n")
+       req_data['status'] += "Stop openocd in your local machine\n"
+       return jsonify(req_data)
 
     if 'openocd' in process_holder:
       logging.debug('Killing OpenOCD')
@@ -536,6 +540,7 @@ def openocd_alive(host='localhost', port=4444, timeout=1):
     
 
 def start_gdbgui_remote(req_data):
+    target_device      = req_data['target_port']
     route = os.path.join(BUILD_PATH, 'gdbinit')
     if not (os.path.exists(route) and os.path.exists("./gbdscript_windows.gdb")):
         logging.error(f"GDB route: {route} or gbdscript_windows.gdb does not exist.")
@@ -544,6 +549,7 @@ def start_gdbgui_remote(req_data):
 
     logging.info("Starting GDBGUI remote...")
     req_data['status'] = ''
+    
 
     gdbgui_cmd = [
         'gdbgui',
@@ -554,7 +560,7 @@ def start_gdbgui_remote(req_data):
     ]
     idf_cmd = [
         'idf.py',
-        '-p', 'rfc2217://host.docker.internal:4000?ign_set_control',
+        '-p', target_device ,
         'monitor'
     ]
 
@@ -614,6 +620,7 @@ def do_debug_request(request):
             return jsonify(req_data)
         logging.debug("Delete previous work")
         # (2) Check environment
+
         if running_in_docker() == True:
             logging.info("Running inside Docker.")
             # Check UART
@@ -630,6 +637,7 @@ def do_debug_request(request):
             start_gdbgui_remote(req_data)
             return jsonify(req_data)
         # Clean previous debug system
+
         if error == 0:
             if 'openocd' in process_holder:
                 logging.debug('Killing OpenOCD')
