@@ -315,10 +315,11 @@ def do_monitor_request(request):
 # (4.1) Physical connections check   
 def check_uart_connection(board):
     """ Checks UART devices """
+    # LINUX
     if board.startswith('/dev/ttyUSB'):
       devices = glob.glob('/dev/ttyUSB*')
       logging.debug(f"Found devices: {devices}")
-      if "/dev/ttyUSB0" in devices:
+      if board in devices:
           logging.info("Found UART.")
           return 0
       elif devices:
@@ -327,6 +328,7 @@ def check_uart_connection(board):
       else:
           logging.error("NO UART port found.")
           return 1
+    # WINDOWS  
     elif board.startswith('rfc2217'):
       try:
           ser = serial.serial_for_url(board, timeout=1)
@@ -335,7 +337,20 @@ def check_uart_connection(board):
           return 0
       except serial.SerialException as e:
           logging.error(f"NO RFC2217 UART port found: {e}")
-          return 1  
+          return 1 
+    # MAC
+    elif board.startswith('/dev/cu.usb'):
+      devices = glob.glob('/dev/cu.usb*')
+      logging.debug(f"Found devices: {devices}")
+      if board in devices:
+          logging.info("Found UART.")
+          return 0
+      elif devices:
+          logging.error("Other UART devices found (Is the name OK?).")
+          return 0
+      else:
+          logging.error("NO UART port found.")
+          return 1   
     
 def check_jtag_connection():
     """ Checks JTAG devices """
