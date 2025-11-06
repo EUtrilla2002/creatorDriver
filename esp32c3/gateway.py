@@ -276,9 +276,10 @@ def do_monitor_request(request):
 
     # Kill debug process
     if running_in_docker() and openocd_alive('host.docker.internal', 4444):
-       logging.error("Stop openocd in your local machine\n")
-       req_data['status'] += "Stop openocd in your local machine\n"
-       return jsonify(req_data)
+      if not openocd_shutdown('host.docker.internal', 4444):
+        req_data['status'] += "Stop openocd in your local machine\n"
+        return jsonify(req_data)
+
 
     if 'openocd' in process_holder:
       logging.debug('Killing OpenOCD')
@@ -614,6 +615,18 @@ def start_gdbgui_remote(req_data):
 
     req_data['status'] += "Debug session finished.\n"
     return jsonify(req_data)
+
+
+def openocd_shutdown(host='localhost', port=4444):
+    try:
+        
+        with socket.create_connection((host, port), timeout=1) as s:
+            s.sendall(b"shutdown\n")
+        return True
+
+    except Exception as e:
+        logging.error(f"OpenOCD not closed correctly: {e}")
+        return False
        
 
    
