@@ -619,7 +619,6 @@ def start_gdbgui_remote(req_data):
 
 def openocd_shutdown(host='localhost', port=4444):
     try:
-        
         with socket.create_connection((host, port), timeout=1) as s:
             s.sendall(b"shutdown\n")
         return True
@@ -627,7 +626,7 @@ def openocd_shutdown(host='localhost', port=4444):
     except Exception as e:
         logging.error(f"OpenOCD not closed correctly: {e}")
         return False
-       
+
 
    
 # (4.7) Main debug function
