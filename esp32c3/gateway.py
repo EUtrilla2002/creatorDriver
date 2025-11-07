@@ -218,7 +218,7 @@ def do_flash_request(request):
               "# CONFIG_ESP_SYSTEM_MEMPROT_FEATURE_LOCK is not set\n" 
           )
     #TODO: Add other boards here...
-    elif target_board == 'esp32c6': 
+    elif target_board == 'esp32c6' or target_board == 'esp32h2': 
           with open(defaults_path, "w") as f:
               f.write(
                   "CONFIG_FREERTOS_HZ=1000\n"
@@ -240,7 +240,7 @@ def do_flash_request(request):
             r'/^CONFIG_ESP_SYSTEM_MEMPROT_FEATURE_LOCK=/c\# CONFIG_ESP_SYSTEM_MEMPROT_FEATURE_LOCK is not set',
             sdkconfig_path
         ])
-      elif target_board == 'esp32c6':
+      elif target_board == 'esp32c6' or target_board == 'esp32h2':
             #CONFIG_FREERTOS_HZ=1000
             do_cmd(req_data, [
                 'sed', '-i',
